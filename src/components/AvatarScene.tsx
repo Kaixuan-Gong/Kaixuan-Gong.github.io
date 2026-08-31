@@ -1,8 +1,8 @@
 'use client';
 
-import { Component, Fragment, Suspense, useEffect, useMemo, useRef, useState, type ElementRef, type ReactNode, type RefObject } from 'react';
+import { Component, Fragment, Suspense, useEffect, useMemo, useRef, useState, type ElementRef, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Decal, Environment, Lightformer, OrbitControls, useGLTF, useProgress, useTexture } from '@react-three/drei';
+import { Environment, Lightformer, OrbitControls, useGLTF, useProgress, useTexture } from '@react-three/drei';
 import { Bloom, EffectComposer } from '@react-three/postprocessing';
 import gsap from 'gsap';
 import * as THREE from 'three';
@@ -19,19 +19,19 @@ class SceneErrorBoundary extends Component<BoundaryProps, { failed: boolean }> {
   render() { return this.state.failed ? null : this.props.children; }
 }
 
-function Sticker({ sticker, meshRef, onSelect }: {
-  sticker: (typeof SITE_CONFIG.stickers)[number]; meshRef: RefObject<THREE.Mesh>; onSelect: () => void;
+function Sticker({ sticker, onSelect }: {
+  sticker: (typeof SITE_CONFIG.stickers)[number]; onSelect: () => void;
 }) {
   const sourceTexture = useTexture(sticker.image);
   const texture = useMemo(() => {
     const nextTexture = sourceTexture.clone();
-    nextTexture.flipY = false;
+    nextTexture.flipY = true;
+    nextTexture.colorSpace = THREE.SRGBColorSpace;
     nextTexture.needsUpdate = true;
     return nextTexture;
   }, [sourceTexture]);
   const [hovered, setHovered] = useState(false);
 
-  // DecalGeometry 的 UV 方向与普通图片纹理相反；关闭自动 Y 翻转后贴纸保持正向。
   useEffect(() => {
     return () => texture.dispose();
   }, [texture]);
@@ -43,13 +43,16 @@ function Sticker({ sticker, meshRef, onSelect }: {
 
   const image = texture.image as { width?: number; height?: number } | undefined;
   const aspect = image?.width && image?.height ? image.width / image.height : 1;
-  const hitArea = useMemo(() => {
+  const surface = useMemo(() => {
     const normal = new THREE.Vector3(...sticker.normal).normalize();
+    const alignToFace = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+    const turnUpright = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), sticker.rotation);
     return {
-      position: new THREE.Vector3(...sticker.position).addScaledVector(normal, 0.014),
-      quaternion: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal),
+      // 仅留 0.0015 的防闪烁间距，肉眼看起来贴在皮肤上而不是悬浮。
+      position: new THREE.Vector3(...sticker.position).addScaledVector(normal, 0.0015),
+      quaternion: alignToFace.multiply(turnUpright),
     };
-  }, [sticker.normal, sticker.position]);
+  }, [sticker.normal, sticker.position, sticker.rotation]);
 
   const selectSticker = (event: { stopPropagation: () => void }) => {
     event.stopPropagation();
@@ -63,18 +66,16 @@ function Sticker({ sticker, meshRef, onSelect }: {
 
   return (
     <Fragment>
-      <Decal mesh={meshRef} position={sticker.position as [number, number, number]} rotation={sticker.rotation}
-        scale={[sticker.scale * aspect, sticker.scale, sticker.projectionDepth]} depthTest renderOrder={10}
-        onClick={selectSticker}
-        onPointerOver={attractPointer}
-        onPointerOut={() => setHovered(false)}>
-        <meshBasicMaterial map={texture} transparent alphaTest={0.04} depthWrite={false}
-          polygonOffset polygonOffsetFactor={-10} polygonOffsetUnits={-4} toneMapped={false} />
-      </Decal>
-      {/* 隐形命中面比贴纸略大，让鼠标靠近边缘时也能被稳定捕获。 */}
-      <mesh position={hitArea.position} quaternion={hitArea.quaternion} renderOrder={11}
+      <mesh position={surface.position} quaternion={surface.quaternion} renderOrder={10}
         onClick={selectSticker} onPointerOver={attractPointer} onPointerOut={() => setHovered(false)}>
-        <planeGeometry args={[sticker.scale * aspect * 1.45, sticker.scale * 1.45]} />
+        <planeGeometry args={[sticker.scale * aspect, sticker.scale]} />
+        <meshBasicMaterial map={texture} transparent alphaTest={0.04} depthWrite={false}
+          polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} toneMapped={false} side={THREE.DoubleSide} />
+      </mesh>
+      {/* 与贴纸同面、略大的透明命中区域，提供弱吸附但不会产生可见悬浮层。 */}
+      <mesh position={surface.position} quaternion={surface.quaternion} renderOrder={11}
+        onClick={selectSticker} onPointerOver={attractPointer} onPointerOut={() => setHovered(false)}>
+        <planeGeometry args={[sticker.scale * aspect * 1.28, sticker.scale * 1.28]} />
         <meshBasicMaterial transparent opacity={0} depthTest={false} depthWrite={false} side={THREE.DoubleSide} />
       </mesh>
     </Fragment>
@@ -85,16 +86,6 @@ function AvatarAssembly({ activeSticker, onStickerSelect, onReady }: SceneProps 
   const gltf = useGLTF(SITE_CONFIG.model.url);
   const group = useRef<THREE.Group>(null);
   const scene = useMemo(() => gltf.scene.clone(true), [gltf.scene]);
-  const avatarMesh = useMemo(() => {
-    let found: THREE.Mesh | null = null;
-    scene.traverse((child) => {
-      if (!found && child instanceof THREE.Mesh) found = child;
-    });
-    if (!found) throw new Error('Avatar mesh was not found in the GLB scene.');
-    return found;
-  }, [scene]);
-  const avatarMeshRef = useMemo<RefObject<THREE.Mesh>>(() => ({ current: avatarMesh }), [avatarMesh]);
-
   useEffect(() => {
     scene.traverse((child) => {
       if (child instanceof THREE.Mesh) {
@@ -126,7 +117,7 @@ function AvatarAssembly({ activeSticker, onStickerSelect, onReady }: SceneProps 
     <group ref={group} scale={SITE_CONFIG.model.scale} position={SITE_CONFIG.model.position as [number, number, number]} rotation={SITE_CONFIG.model.rotation as [number, number, number]}>
       <primitive object={scene} />
       {SITE_CONFIG.stickers.map((sticker) => (
-        <Sticker key={sticker.id} sticker={sticker} meshRef={avatarMeshRef}
+        <Sticker key={sticker.id} sticker={sticker}
           onSelect={() => onStickerSelect(activeSticker === sticker.id ? null : sticker.id)} />
       ))}
     </group>
