@@ -1,3 +1,10 @@
+
+
+/* Keep the contact section visually consistent with the 3D home stage. */
+.contact-section { color:var(--paper); background:radial-gradient(circle at 76% 8%,rgba(216,255,88,.11),transparent 25%),radial-gradient(circle at 20% 52%,rgba(142,167,255,.13),transparent 30%),#101010; border-top-color:rgba(244,242,235,.2); }
+.contact-meta > p { color:rgba(244,242,235,.62); }
+.contact-meta a { border-bottom-color:rgba(244,242,235,.35); }
+.footer-mark { color:rgba(244,242,235,.055); }
 @import 'tailwindcss';
 
 :root { --ink:#101010; --paper:#f4f2eb; --accent:#ff593d; --electric:#8ea7ff; --lime:#d8ff58; --font-display:var(--font-sans); }
