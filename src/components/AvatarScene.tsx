@@ -98,6 +98,7 @@ function AvatarAssembly({ activeSticker, onStickerSelect, onReady }: SceneProps 
             material.normalScale.setScalar(SITE_CONFIG.model.normalStrength);
             material.roughness = SITE_CONFIG.model.roughness;
             material.metalness = SITE_CONFIG.model.metalness;
+            material.envMapIntensity = SITE_CONFIG.model.envMapIntensity;
             material.needsUpdate = true;
           }
         });
@@ -124,10 +125,29 @@ function AvatarAssembly({ activeSticker, onStickerSelect, onReady }: SceneProps 
   );
 }
 
-function CameraRig({ activeSticker }: { activeSticker: string | null }) {
+function CameraRig({ activeSticker, modelReady }: { activeSticker: string | null; modelReady: boolean }) {
   const { camera } = useThree();
   const controls = useRef<ElementRef<typeof OrbitControls>>(null);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const cruiseStartAt = useRef(Number.POSITIVE_INFINITY);
   const active = SITE_CONFIG.stickers.find((sticker) => sticker.id === activeSticker);
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const syncPreference = () => setReducedMotion(media.matches);
+    syncPreference();
+    media.addEventListener('change', syncPreference);
+    return () => media.removeEventListener('change', syncPreference);
+  }, []);
+
+  useEffect(() => {
+    cruiseStartAt.current = modelReady ? performance.now() + 2400 : Number.POSITIVE_INFINITY;
+  }, [modelReady]);
+
+  useFrame(() => {
+    if (!controls.current) return;
+    controls.current.autoRotate = !activeSticker && !reducedMotion && performance.now() >= cruiseStartAt.current;
+  });
 
   useEffect(() => {
     const position = active?.focusPosition ?? SITE_CONFIG.camera.defaultPosition;
@@ -146,7 +166,7 @@ function CameraRig({ activeSticker }: { activeSticker: string | null }) {
 
   return (
     <OrbitControls ref={controls} makeDefault enablePan={false} enableZoom minDistance={1.8} maxDistance={4.4}
-      minPolarAngle={Math.PI * 0.38} maxPolarAngle={Math.PI * 0.62} autoRotate={!activeSticker}
+      minPolarAngle={Math.PI * 0.38} maxPolarAngle={Math.PI * 0.62} autoRotate={false}
       autoRotateSpeed={SITE_CONFIG.camera.orbitSpeed} enableDamping dampingFactor={0.06}
       target={SITE_CONFIG.camera.defaultTarget as [number, number, number]} />
   );
@@ -186,7 +206,6 @@ export function AvatarScene({ activeSticker, onStickerSelect }: SceneProps) {
           camera={{ position: SITE_CONFIG.camera.defaultPosition as [number, number, number], fov: SITE_CONFIG.camera.fov, near: 0.1, far: 100 }}
           gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
           onPointerMissed={() => onStickerSelect(null)}>
-          <color attach="background" args={['#ebe8de']} />
           <fog attach="fog" args={['#ebe8de', 4, 8]} />
           <ambientLight intensity={SITE_CONFIG.lighting.ambientIntensity} color={SITE_CONFIG.lighting.ambient} />
           <directionalLight position={[2.8, 4, 4]} intensity={SITE_CONFIG.lighting.keyIntensity} color={SITE_CONFIG.lighting.key} />
@@ -199,7 +218,7 @@ export function AvatarScene({ activeSticker, onStickerSelect }: SceneProps) {
               <Lightformer intensity={1.2} position={[3, -1, 1]} scale={[1, 2, 1]} color="#fff3df" />
             </Environment>
           </Suspense>
-          <CameraRig activeSticker={activeSticker} />
+          <CameraRig activeSticker={activeSticker} modelReady={modelReady} />
           <EffectComposer multisampling={0}><Bloom mipmapBlur intensity={SITE_CONFIG.lighting.bloomIntensity} luminanceThreshold={0.9} /></EffectComposer>
         </Canvas>
       </SceneErrorBoundary>
