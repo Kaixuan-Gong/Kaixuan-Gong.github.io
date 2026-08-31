@@ -81,6 +81,13 @@ export default function Home() {
           <div className="interaction-hint"><span className="pulse-dot" /> 点击脸上的贴纸，探索我的经历</div>
         </div>
 
+        <div className="hero-spatial" aria-hidden="true">
+          <div className="spatial-orbit"><span /><span /></div>
+          <div className="spatial-axis spatial-axis-x" />
+          <div className="spatial-axis spatial-axis-y" />
+          <strong>KX</strong>
+        </div>
+
         <div className="scene-frame">
           <AvatarScene activeSticker={activeSticker} onStickerSelect={setActiveSticker} />
         </div>
